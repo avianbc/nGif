@@ -1,12 +1,9 @@
 using System;
 using System.Drawing;
+using System.Drawing.Imaging;
 using System.IO;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
-
-
-
 
 #region .NET Disclaimer/Info
 //===============================================================================
@@ -364,6 +361,37 @@ namespace Gif.Components {
 		/**
 		 * Adds next GIF frame.
 		 * 
+		 * @param Image im - image of the frame to write
+		 * @param CancellationToken token - a token that can trigger a cancell from outside.
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrame(System.Drawing.Image im, CancellationToken token, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return UntaskedFrame(encodeData, token);
+		}
+		/**
+		 * Adds next GIF frame.
+		 * 
+		 * @param Image im - image of the frame to write
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrame(System.Drawing.Image im, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return UntaskedFrame(encodeData);
+		}
+		/**
+		 * Adds next GIF frame.
+		 * 
 		 * @param byte[] pixels - a byte array of image pixels containing frame to write.
 		 * @param CancellationToken token - a token that can trigger a cancell from outside.
 		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
@@ -376,7 +404,6 @@ namespace Gif.Components {
 			encodeData.pixelsArr = pixels; // was this.pixels, moved that into the taskData
 			return UntaskedFrame(encodeData);
 		}
-
 		/**
 		 * Adds next GIF frame - cancellable.
 		 * 
@@ -392,7 +419,6 @@ namespace Gif.Components {
 			encodeData.pixelsArr = pixels; // was this.pixels, moved that into the taskData
 			return UntaskedFrame(encodeData, token);
 		}
-
 		/**
 		 * Adds next GIF frame.
 		 * 
@@ -407,7 +433,6 @@ namespace Gif.Components {
 			encodeData.pixelsPtr = pixels; // was this.pixels, moved that into the taskData
 			return UntaskedFrame(encodeData);
 		}
-
 		/**
 		 * Adds next GIF frame - cancellable.
 		 * 
@@ -423,7 +448,78 @@ namespace Gif.Components {
 			encodeData.pixelsPtr = pixels; // was this.pixels, moved that into the taskData
 			return UntaskedFrame(encodeData, token);
 		}
-
+		/**
+		 * Adds next GIF frame.
+		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
+		 * Make sure to finish writing the animation with TryWriteFrameIntoFile after
+		 *
+		 * @param Image im - image of the frame to write
+		 * @param Task task - if not null, it will start its own task and write it into the reference, otherwise it should be already ran in parallel task from the program above
+		 * @param CancellationToken token - a token that can trigger a cancell from outside.
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrameParallel(System.Drawing.Image im, ref Task task, CancellationToken token, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return MakeFrameTask(encodeData, ref task, token); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
+		}
+		/**
+		 * Adds next GIF frame.
+		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
+		 * Make sure to finish writing the animation with TryWriteFrameIntoFile after
+		 *
+		 * @param Image im - image of the frame to write
+		 * @param Task task - if not null, it will start its own task and write it into the reference, otherwise it should be already ran in parallel task from the program above
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrameParallel(System.Drawing.Image im, ref Task task, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return MakeFrameTask(encodeData, ref task); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
+		}
+		/**
+		 * Adds next GIF frame.
+		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
+		 * Make sure to finish writing the animation with TryWriteFrameIntoFile after
+		 *
+		 * @param Image im - image of the frame to write
+		 * @param CancellationToken token - a token that can trigger a cancell from outside.
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrameParallel(System.Drawing.Image im, CancellationToken token, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return AddFrameTask(encodeData, token); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
+		}
+		/**
+		 * Adds next GIF frame.
+		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
+		 * Make sure to finish writing the animation with TryWriteFrameIntoFile after
+		 *
+		* @param Image im - image of the frame to write
+		 * @param frameIndex - leave empty -1 if you are adding frames sequentially, or input the frameIndex (from 0 to images-1) if you are adding out of order. DO NOT MIX -1 and out of order for the same gif! 
+		 * @return true if successful.
+		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
+		public bool AddFrameParallel(System.Drawing.Image im, int frameIndex = -1) {
+			var encodeData = NextEncodeData(frameIndex);
+			if (encodeData == null)
+				return Abort();
+			SetEncodeBitmap(encodeData, im);
+			return AddFrameTask(encodeData); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
+		}
 		/**
 		 * Adds next GIF frame.
 		 * The frame is not written immediately, because this AddFrame can be called in parallel, so the previous one might not have been finished yet.
@@ -441,7 +537,6 @@ namespace Gif.Components {
 			encodeData.pixelsArr = pixels; // was this.pixels, moved that into the taskData
 			return AddFrameTask(encodeData, token); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
 		}
-
 		/**
 		 * Adds next GIF frame.
 		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
@@ -460,7 +555,6 @@ namespace Gif.Components {
 			encodeData.pixelsArr = pixels; // was this.pixels, moved that into the taskData
 			return MakeFrameTask(encodeData, ref task, token); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
 		}
-
 		/**
 		 * Adds next GIF frame.
 		 * The frame is not written immediately, because this AddFrame can be called in parallel, so the previous one might not have been finished yet.
@@ -478,7 +572,6 @@ namespace Gif.Components {
 			encodeData.pixelsPtr = pixels; // was this.pixels, moved that into the taskData
 			return AddFrameTask(encodeData, token); // here it normally continued with the code for writing to file, but i have moved that to TryWriteFrameIntoFile where it will wait for the first next task to complete
 		}
-
 		/**
 		 * Adds next GIF frame.
 		 * The frame is not written immediately, because this AddFrame will create a parallel task that will not be finished immediately
@@ -503,6 +596,7 @@ namespace Gif.Components {
 		/**
 		 * Analyzes image colors and creates color map.
 		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 		unsafe protected bool AnalyzePixels(EncoderTaskData encodeData) {
 
 			// initialize quantizer
@@ -533,12 +627,16 @@ namespace Gif.Components {
 			// get closest match to transparent color if specified
 			if (transparent != Color.Empty)
 				encodeData.transIndex = nq.Map(transparent.B, transparent.G, transparent.R);
+			if (encodeData.bitmapData != null)
+				encodeData.bitmap.UnlockBits(encodeData.bitmapData); // unlock bits if we were adding a direct image
+			encodeData.finished = true; // lets the TryWriteFrameIntoFile know this task was finished so it can write the data into the file
 			return false;
 		}
 
 		/**
 		 * Analyzes image colors and creates color map.
 		 */
+		[System.Runtime.Versioning.SupportedOSPlatform("windows")]
 		unsafe protected bool AnalyzePixels(EncoderTaskData encodeData, CancellationToken token) {
 
 			// initialize quantizer
@@ -582,6 +680,9 @@ namespace Gif.Components {
 			// get closest match to transparent color if specified
 			if (transparent != Color.Empty)
 				encodeData.transIndex = nq.Map(transparent.B, transparent.G, transparent.R);
+			if (encodeData.bitmapData != null)
+				encodeData.bitmap.UnlockBits(encodeData.bitmapData); // unlock bits if we were adding a direct image
+			encodeData.finished = true; // lets the TryWriteFrameIntoFile know this task was finished so it can write the data into the file
 			return false;
 		}
 		#endregion
@@ -598,7 +699,10 @@ namespace Gif.Components {
 			public bool finished = false;   // Is this task finished? Will let TryWriteFrameIntoFile to write this frame, and release the data
 			public bool failed = false;     // Has something failed in this task?
 			public Task thisTask = null;    // If you add task referrence in AddFrame, it will crate its own task, and save it for both that reference and this
-			public int frameIndex;
+			public int frameIndex;			// Frame index within the animation
+			public BitmapData 
+				bitmapData = null;          // LockBits when added direct image
+			public Bitmap bitmap = null;	// Direct image
 			public EncoderTaskData
 				nextTask = null;            // The task for next frame
 											// (if its null, the previous task was the last frame and the animation shoudl complete upon it's finish)
@@ -619,39 +723,37 @@ namespace Gif.Components {
 		private bool UntaskedFrame(EncoderTaskData encodeTask) {
 			encodeTask.failed = AnalyzePixels(encodeTask);   // build color table & map pixels, returns Failed/Cancelled
 			while (TryWrite() == Components.TryWrite.FinishedFrame) ;
-			return (encodeTask.finished = true) && Abort(encodeTask.failed || TryWrite() == Components.TryWrite.Failed);
+			return Abort(encodeTask.failed || TryWrite() == Components.TryWrite.Failed);
 		}
 		/** Just analyze pixels without parallel tasks - cancellable */
 		private bool UntaskedFrame(EncoderTaskData encodeTask, CancellationToken token) {
 			encodeTask.failed = AnalyzePixels(encodeTask, token);   // build color table & map pixels, returns Failed/Cancelled
 			while (TryWrite() == Components.TryWrite.FinishedFrame) ;
-			return (encodeTask.finished = true) && Abort(encodeTask.failed || TryWrite() == Components.TryWrite.Failed);
+			return Abort(encodeTask.failed || TryWrite() == Components.TryWrite.Failed);
 		}
 		/** Make a task when called Parallel will supplied Task reference to assign the new Task to - cancellable */
 		protected bool MakeFrameTask(EncoderTaskData encodeTask, ref Task task, CancellationToken token) {
-			task = encodeTask.thisTask = Task.Run(() => {
-				encodeTask.failed = AnalyzePixels(encodeTask, token);    // build color table & map pixels, returns Failed/Cancelled
-				encodeTask.finished = true; // lets the TryWriteFrameIntoFile know this task was finished so it can write the data into the file
-			}, token);
+			task = encodeTask.thisTask = Task.Run(() => encodeTask.failed = AnalyzePixels(encodeTask, token), token);
 			return true;
 		}
 		/** Add task when called Parallel from outside parallel thread - cancellable */
 		protected bool AddFrameTask(EncoderTaskData encodeTask, CancellationToken token) {
 			encodeTask.failed = AnalyzePixels(encodeTask, token);   // build color table & map pixels, returns Failed/Cancelled
-			return (encodeTask.finished = true) && Abort(encodeTask.failed);
+			return Abort(encodeTask.failed);
 		}
 		/** Make a task when called Parallel will supplied Task reference to assign the new Task to */
 		protected bool MakeFrameTask(EncoderTaskData encodeTask, ref Task task) {
-			task = encodeTask.thisTask = Task.Run(() => {
-				encodeTask.failed = AnalyzePixels(encodeTask);    // build color table & map pixels, returns Failed/Cancelled
-				encodeTask.finished = true; // lets the TryWriteFrameIntoFile know this task was finished so it can write the data into the file
-			});
+			task = encodeTask.thisTask = Task.Run(() => encodeTask.failed = AnalyzePixels(encodeTask));
 			return true;
 		}
 		/** Add task when called Parallel from outside parallel thread */
 		protected bool AddFrameTask(EncoderTaskData encodeTask) {
 			encodeTask.failed = AnalyzePixels(encodeTask);   // build color table & map pixels, returns Failed/Cancelled
-			return (encodeTask.finished = true) && Abort(encodeTask.failed);
+			return Abort(encodeTask.failed);
+		}
+		/** Add bitmap to the task */
+		protected void SetEncodeBitmap(EncoderTaskData encodeTask, Image im) {
+			encodeTask.bitmapData = (encodeTask.bitmap = (Bitmap)im).LockBits(new Rectangle(0, 0, im.Width, im.Height), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
 		}
 		/**Initiates writing of a GIF file with the specified name.
 		 * Call this if you are using a Memory stream, after out called Finish and verified the finish with TryWriteFrameIntoFile
